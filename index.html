@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+ <html lang="en">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Real-time Chat Room</title>
+     <style>
+         body { 
+             font-family: Arial, sans-serif; 
+             display: flex;
+             justify-content: center; 
+             align-items: center; 
+             height: 100vh; 
+             background-color: #121212; 
+             margin: 0; 
+         }
+         .chat-container { 
+             width: 100%; 
+             max-width: 768px; 
+             height: 90vh; 
+             border: 1px solid #333; 
+             border-radius: 8px; 
+             display: flex; 
+             flex-direction: column; 
+             overflow: hidden; 
+             background-color: #1f1f1f; 
+             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); 
+         }
+         .messages { 
+             flex: 1; 
+             border-bottom: 1px solid #333; 
+             overflow-y: scroll; 
+             padding: 20px; 
+             background-color: #1f1f1f; 
+             color: #e0e0e0; 
+         }
+         .message { 
+             margin-bottom: 15px; 
+             padding: 10px; 
+             border-radius: 20px; 
+             max-width: 60%; 
+             position: relative; 
+         }
+         .message.sent { 
+             background-color: #4caf50; 
+             color: #000; 
+             margin-left: auto; 
+         }
+         .message.received { 
+             background-color: #673ab7; 
+             color: #fff; 
+         }
+         .message time { 
+             display: block; 
+             font-size: 0.75em; 
+             color: #000000; 
+             text-align: right; 
+             margin-top: 5px; 
+         }
+         .input-container { 
+             display: flex; 
+             align-items: center; 
+             padding: 10px; 
+             border-top: 1px solid #333; 
+             background-color: #121212; 
+         }
+         input[type="text"], input[type="name"] { 
+             flex: 1; 
+             padding: 10px; 
+             border: 1px solid #333; 
+             border-radius: 20px; 
+             background-color: #1f1f1f; 
+             color: #e0e0e0; 
+             margin-right: 10px; 
+         }
+         button { 
+             padding: 10px 20px; 
+             border: none; 
+             background-color: #007bff; 
+             color: white; 
+             border-radius: 20px; 
+             cursor: pointer; 
+             transition: background-color 0.3s; 
+         }
+         button:hover { 
+             background-color: #0056b3; 
+         }
+         #recordButton, #stopButton { 
+             margin-left: 10px; 
+         }
+     </style>
+ </head>
+ <body>
+     <div class="chat-container">
+         <div class="messages" id="messages"></div>
+         <div class="input-container">
+             <input type="text" id="nameInput" placeholder="Enter your name...">
+             <input type="text" id="messageInput" placeholder="Type a message...">
+             <button onclick="sendMessage()">Send</button>
+             <button id="recordButton">Record</button>
+             <button id="stopButton" disabled>Stop</button>
+         </div>
+     </div>
+     <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+        import { getDatabase, ref, onChildAdded, push, set } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js";
+        import { getStorage, uploadBytes, getDownloadURL, ref as storageRef } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-storage.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBzkgN79_fZfzXVwFwKIIWg9X3pj-R98PE",
+            authDomain: "iranarad-f5187.firebaseapp.com",
+            databaseURL: "https://iranarad-f5187-default-rtdb.firebaseio.com",
+            projectId: "iranarad-f5187",
+            storageBucket: "iranarad-f5187.appspot.com",
+            messagingSenderId: "615007231971",
+            appId: "1:615007231971:web:fca4790997802ec0484ad6"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const storage = getStorage(app);
+
+        const messagesElement = document.getElementById('messages');
+        const nameInput = document.getElementById('nameInput');
+        const messageInput = document.getElementById('messageInput');
+        const recordButton = document.getElementById('recordButton');
+        const stopButton = document.getElementById('stopButton');
+
+        let mediaRecorder;
+        let audioChunks = [];
+
+        const messagesRef = ref(db, 'messages');
+        onChildAdded(messagesRef, (snapshot) => {
+            const data = snapshot.val();
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.classList.add(data.sender === nameInput.value ? 'sent' : 'received');
+
+            const timeElement = document.createElement('time');
+            timeElement.textContent = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            if (data.audioUrl) {
+                const audio = document.createElement('audio');
+                audio.src = data.audioUrl;
+                audio.controls = true;
+                messageElement.appendChild(audio);
+            }
+            if (data.message) {
+                const text = document.createElement('p');
+                text.textContent = `${data.sender}: ${data.message}`;
+                messageElement.appendChild(text);
+            }
+            messageElement.appendChild(timeElement);
+            messagesElement.appendChild(messageElement);
+            messagesElement.scrollTop = messagesElement.scrollHeight;
+        });
+
+        recordButton.addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.start();
+                    audioChunks = [];
+                    recordButton.disabled = true;
+                    stopButton.disabled = false;
+
+                    mediaRecorder.addEventListener('dataavailable', event => {
+                        audioChunks.push(event.data);
+                    });
+
+                    mediaRecorder.addEventListener('stop', () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const audioFile = new File([audioBlob], 'audio.wav', { type: 'audio/wav' });
+                        sendAudioMessage(audioFile);
+                    });
+                })
+                .catch(error => {
+                    console.error("Error accessing microphone:", error);
+                });
+        });
+
+        stopButton.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                recordButton.disabled = false;
+                stopButton.disabled = true;
+            } else {
+                console.error("MediaRecorder is not active or already stopped.");
+            }
+        });
+
+        window.sendMessage = function() {
+            const name = nameInput.value.trim();
+            const message = messageInput.value.trim();
+            if (name !== '' && message !== '') {
+                const timestamp = new Date().toISOString();
+                const newMessageRef = push(messagesRef);
+                set(newMessageRef, {
+                    message: message,
+                    sender: name,
+                    timestamp: timestamp
+                })
+                .then(() => {
+                    messageInput.value = '';
+                })
+                .catch((error) => {
+                    console.error("Error sending message:", error);
+                });
+            } else {
+                alert("Please enter both your name and a message.");
+            }
+        };
+
+        function sendAudioMessage(file) {
+            const name = nameInput.value.trim();
+            if (name === '') {
+                alert("Please enter your name.");
+                return;
+            }
+
+            const timestamp = new Date().toISOString();
+            const newMessageRef = push(messagesRef);
+            const fileRef = storageRef(storage, 'audio/' + file.name);
+            uploadBytes(fileRef, file).then((snapshot) => {
+                getDownloadURL(snapshot.ref).then((url) => {
+                    set(newMessageRef, {
+                        sender: name,
+                        audioUrl: url,
+                        timestamp: timestamp
+                    })
+                    .then(() => {
+                        console.log("Audio message sent successfully.");
+                    })
+                    .catch((error) => {
+                        console.error("Error sending audio message:", error);
+                    });
+                })
+                .catch((error) => {
+                    console.error("Error getting download URL:", error);
+                });
+            })
+            .catch((error) => {
+                console.error("Error uploading audio file:", error);
+            });
+        }
+
+        // Request notification permission on page load
+        requestNotificationPermission().then(() => {
+            console.log("Notification permission granted.");
+        }).catch((error) => {
+            console.error("Error requesting notification permission:", error);
+        });
+    </script>
+</body>
+</html>
+ 
